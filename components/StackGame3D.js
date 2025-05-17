@@ -4,23 +4,34 @@ import * as THREE from 'three';
 const BLOCK_HEIGHT = 1;
 const BLOCK_SIZE = 4;
 const BASE_HEIGHT = BLOCK_HEIGHT; // Base is same height as other blocks
-const INITIAL_MOVE_SPEED = 0.07;
-const SPEED_INCREMENT = 1.015;
+const INITIAL_MOVE_SPEED = 0.04;
+const SPEED_INCREMENT = 0.0001; // Linear increment per block
 const MAX_MOVE_SPEED = 0.28;
 const FALL_SPEED = 0.2;
-const GRAVITY = 0.01;
-
-function getColor(level) {
-  // Simple gradient: blue to green to yellow
-  const colors = ['#6366f1', '#06b6d4', '#22d3ee', '#a3e635', '#fde047', '#fbbf24', '#f87171'];
-  return colors[level % colors.length];
-}
+const GRAVITY = 0.03; // slower gravity for realism
+const FRICTION = 0.96; // friction for rolling
+const BOUNCE = 0.3; // bounce factor
 
 const StackGame3D = () => {
   const mountRef = useRef(null);
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [restartKey, setRestartKey] = useState(0); // To force re-mount on restart
+  const [baseHue, setBaseHue] = useState(() => Math.floor(Math.random() * 360));
+
+  function getColor(level) {
+    // Use a smaller hue step for more subtle color changes
+    const hueStep = 8; // Smaller step for more subtle changes
+    const hue = (baseHue + level * hueStep) % 360;
+    
+    // Higher saturation for more vibrant colors
+    const sat = 85 + (level * 0.1) % 10; // 85-95% saturation
+    
+    // Higher lightness for brighter, softer colors
+    const light = 75 + (level * 0.2) % 10; // 75-85% lightness
+    
+    return `hsl(${hue}, ${sat}%, ${light}%)`;
+  }
 
   useEffect(() => {
     let scene, camera, renderer, animationId;
@@ -40,8 +51,8 @@ const StackGame3D = () => {
 
     // Camera: isometric 45deg, close-up
     camera = new THREE.PerspectiveCamera(45, 400 / 600, 0.1, 1000);
-    const camDist = 10; // even closer
-    const camHeight = BLOCK_HEIGHT / 2 + 7; // a bit lower for more drama
+    const camDist = 12; // a bit further for a wider view
+    const camHeight = 4; // much lower for a more side-on look
     const camAngle = Math.PI / 4; // 45deg
     camera.position.set(
       Math.sin(camAngle) * camDist,
@@ -93,6 +104,7 @@ const StackGame3D = () => {
       setScore(0);
       setGameOver(false);
       fallingPieces = [];
+      setBaseHue(Math.floor(Math.random() * 360)); // New color family each game
 
       // Add base block (tall)
       const base = addBlock(BLOCK_HEIGHT / 2, BLOCK_SIZE, BLOCK_SIZE, getColor(0), 0, 0, BLOCK_HEIGHT);
@@ -112,10 +124,12 @@ const StackGame3D = () => {
       let z = lastBlock.position.z;
       let sizeX = lastBlock.userData.sizeX;
       let sizeZ = lastBlock.userData.sizeZ;
-      if (direction === 1) x = -8; // Start from left
-      if (direction === -1) z = -8; // Start from far
+      const moveRangeX = sizeX * 1.2;
+      const moveRangeZ = sizeZ * 1.2;
+      if (direction === 1) x = -moveRangeX; // Start just outside left
+      if (direction === -1) z = -moveRangeZ; // Start just outside far
       const block = addBlock(y, sizeX, sizeZ, color, x, z);
-      block.userData = { direction, moveDir: 1, speed: moveSpeed, sizeX, sizeZ };
+      block.userData = { direction, moveDir: 1, speed: moveSpeed, sizeX, sizeZ, moveRangeX, moveRangeZ };
       currentBlock = block;
       stack.push(block);
       isMoving = true;
@@ -158,6 +172,7 @@ const StackGame3D = () => {
         curr.position[axis] -= delta / 2;
         curr.userData[sizeKey] = newSize;
         setScore(s => s + 1);
+        moveSpeed = Math.min(moveSpeed + SPEED_INCREMENT, MAX_MOVE_SPEED);
 
         // Create falling piece
         if (cutSize > 0.01) {
@@ -170,9 +185,13 @@ const StackGame3D = () => {
             axis === 'x' ? cutPos : curr.position.x,
             axis === 'z' ? cutPos : curr.position.z
           );
+          // Give the falling piece a push and spin
           falling.userData = {
             velocityY: 0,
+            velocityX: axis === 'x' ? (delta > 0 ? 0.08 : -0.08) : 0,
+            velocityZ: axis === 'z' ? (delta > 0 ? 0.08 : -0.08) : 0,
             rotation: (Math.random() - 0.5) * 0.1,
+            angularVelocity: (Math.random() - 0.5) * 0.08,
             axis,
             alive: true
           };
@@ -185,11 +204,31 @@ const StackGame3D = () => {
         }, 200);
         // Camera up
         cameraTargetY = curr.position.y + 9;
-
-        // Gradually increase speed, but cap it
-        moveSpeed = Math.min(moveSpeed * SPEED_INCREMENT, MAX_MOVE_SPEED);
       } else {
         // Game over
+        // Make the last block fall as a falling piece
+        const axis = direction === 1 ? 'x' : 'z';
+        const sizeKey = direction === 1 ? 'sizeX' : 'sizeZ';
+        const last = currentBlock;
+        const falling = addBlock(
+          last.position.y,
+          last.userData.sizeX,
+          last.userData.sizeZ,
+          getColor(stack.length - 1),
+          last.position.x,
+          last.position.z
+        );
+        falling.userData = {
+          velocityY: 0,
+          velocityX: direction === 1 ? last.userData.speed * last.userData.moveDir : 0,
+          velocityZ: direction === -1 ? last.userData.speed * last.userData.moveDir : 0,
+          rotation: (Math.random() - 0.5) * 0.1,
+          angularVelocity: (Math.random() - 0.5) * 0.08,
+          axis,
+          alive: true
+        };
+        fallingPieces.push(falling);
+        scene.remove(last); // Remove the last block from the stack
         setGameOver(true);
       }
     }
@@ -198,21 +237,53 @@ const StackGame3D = () => {
       if (isMoving && currentBlock && !gameOver) {
         if (direction === 1) {
           currentBlock.position.x += currentBlock.userData.speed * currentBlock.userData.moveDir;
-          if (currentBlock.position.x > 8) currentBlock.userData.moveDir = -1;
-          if (currentBlock.position.x < -8) currentBlock.userData.moveDir = 1;
+          const maxX = currentBlock.userData.moveRangeX;
+          if (currentBlock.position.x > maxX) currentBlock.userData.moveDir = -1;
+          if (currentBlock.position.x < -maxX) currentBlock.userData.moveDir = 1;
         } else {
           currentBlock.position.z += currentBlock.userData.speed * currentBlock.userData.moveDir;
-          if (currentBlock.position.z > 8) currentBlock.userData.moveDir = -1;
-          if (currentBlock.position.z < -8) currentBlock.userData.moveDir = 1;
+          const maxZ = currentBlock.userData.moveRangeZ;
+          if (currentBlock.position.z > maxZ) currentBlock.userData.moveDir = -1;
+          if (currentBlock.position.z < -maxZ) currentBlock.userData.moveDir = 1;
         }
       }
       // Animate falling pieces
       for (let i = fallingPieces.length - 1; i >= 0; i--) {
         const piece = fallingPieces[i];
         if (!piece.userData.alive) continue;
-        piece.position.y -= FALL_SPEED;
-        piece.rotation[piece.userData.axis === 'x' ? 'z' : 'x'] += piece.userData.rotation;
+        // Physics
+        piece.position.y += piece.userData.velocityY;
         piece.userData.velocityY -= GRAVITY;
+        piece.position.x += piece.userData.velocityX || 0;
+        piece.position.z += piece.userData.velocityZ || 0;
+        // Rotation
+        if (piece.userData.axis === 'x') {
+          piece.rotation.z += piece.userData.rotation;
+        } else {
+          piece.rotation.x += piece.userData.rotation;
+        }
+        piece.rotation.y += piece.userData.angularVelocity;
+        // Ground collision and rolling
+        if (piece.position.y <= BLOCK_HEIGHT / 2) {
+          piece.position.y = BLOCK_HEIGHT / 2;
+          if (Math.abs(piece.userData.velocityY) > 0.05) {
+            piece.userData.velocityY = -piece.userData.velocityY * BOUNCE;
+          } else {
+            piece.userData.velocityY = 0;
+            // Friction slows down rolling
+            piece.userData.velocityX *= FRICTION;
+            piece.userData.velocityZ *= FRICTION;
+            piece.userData.angularVelocity *= FRICTION;
+            if (
+              Math.abs(piece.userData.velocityX) < 0.001 &&
+              Math.abs(piece.userData.velocityZ) < 0.001 &&
+              Math.abs(piece.userData.angularVelocity) < 0.001
+            ) {
+              piece.userData.alive = false;
+              setTimeout(() => scene.remove(piece), 1000);
+            }
+          }
+        }
         if (piece.position.y < -20) {
           scene.remove(piece);
           piece.userData.alive = false;
