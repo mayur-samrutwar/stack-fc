@@ -3,7 +3,10 @@ import * as THREE from 'three';
 
 const BLOCK_HEIGHT = 2;
 const BLOCK_SIZE = 4;
+const BASE_HEIGHT = BLOCK_HEIGHT; // Base is same height as other blocks
 const MOVE_SPEED = 0.15;
+const FALL_SPEED = 0.2;
+const GRAVITY = 0.01;
 
 function getColor(level) {
   // Simple gradient: blue to green to yellow
@@ -26,14 +29,23 @@ const StackGame3D = () => {
     let isMoving = true;
     let cameraTargetY = 10;
     let cameraLerp = 0.1;
+    let fallingPieces = [];
 
     // --- SETUP ---
     scene = new THREE.Scene();
     scene.background = new THREE.Color('#f3f4f6');
 
+    // Camera: isometric 45deg, close-up
     camera = new THREE.PerspectiveCamera(45, 400 / 600, 0.1, 1000);
-    camera.position.set(0, 10, 20);
-    camera.lookAt(0, 0, 0);
+    const camDist = 18; // closer
+    const camHeight = BLOCK_HEIGHT / 2 + 9; // match initial stack height + offset
+    const camAngle = Math.PI / 4; // 45deg
+    camera.position.set(
+      Math.sin(camAngle) * camDist,
+      camHeight,
+      Math.cos(camAngle) * camDist
+    );
+    camera.lookAt(0, camHeight - 9, 0); // Look at the base
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(400, 600);
@@ -48,17 +60,17 @@ const StackGame3D = () => {
     scene.add(dirLight);
 
     // Ground
-    const groundGeometry = new THREE.PlaneGeometry(20, 20);
+    const groundGeometry = new THREE.PlaneGeometry(40, 40);
     const groundMaterial = new THREE.MeshPhongMaterial({ color: '#e0e7ef' });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -BLOCK_HEIGHT;
+    ground.position.y = -BLOCK_HEIGHT / 2 - 0.01;
     ground.receiveShadow = true;
     scene.add(ground);
 
     // --- GAME LOGIC ---
-    function addBlock(y, size, color, x = 0, z = 0) {
-      const geometry = new THREE.BoxGeometry(size, BLOCK_HEIGHT, size);
+    function addBlock(y, sizeX, sizeZ, color, x = 0, z = 0, customHeight = BLOCK_HEIGHT) {
+      const geometry = new THREE.BoxGeometry(sizeX, customHeight, sizeZ);
       const material = new THREE.MeshPhongMaterial({ color });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.set(x, y, z);
@@ -77,12 +89,14 @@ const StackGame3D = () => {
       isMoving = true;
       setScore(0);
       setGameOver(false);
+      fallingPieces = [];
 
-      // Add first block
-      const base = addBlock(BLOCK_HEIGHT / 2, BLOCK_SIZE, getColor(0));
+      // Add base block (tall)
+      const base = addBlock(BLOCK_HEIGHT / 2, BLOCK_SIZE, BLOCK_SIZE, getColor(0), 0, 0, BLOCK_HEIGHT);
+      base.userData = { sizeX: BLOCK_SIZE, sizeZ: BLOCK_SIZE };
       stack.push(base);
 
-      // Add second block
+      // Add first playable block
       addNewBlock();
     }
 
@@ -93,10 +107,12 @@ const StackGame3D = () => {
       const color = getColor(stack.length);
       let x = lastBlock.position.x;
       let z = lastBlock.position.z;
+      let sizeX = lastBlock.userData.sizeX;
+      let sizeZ = lastBlock.userData.sizeZ;
       if (direction === 1) x = -8; // Start from left
       if (direction === -1) z = -8; // Start from far
-      const block = addBlock(y, lastBlock.scale.x * BLOCK_SIZE, color, x, z);
-      block.userData = { direction, moveDir: 1, speed: MOVE_SPEED };
+      const block = addBlock(y, sizeX, sizeZ, color, x, z);
+      block.userData = { direction, moveDir: 1, speed: MOVE_SPEED, sizeX, sizeZ };
       currentBlock = block;
       stack.push(block);
       isMoving = true;
@@ -107,24 +123,59 @@ const StackGame3D = () => {
       isMoving = false;
       const prev = stack[stack.length - 2];
       const curr = currentBlock;
-      let overlap, delta, axis;
+      let overlap, delta, axis, sizeKey, posKey;
+      let prevSize, currSize, prevPos, currPos;
 
       if (direction === 1) {
         axis = 'x';
-        delta = curr.position.x - prev.position.x;
-        overlap = prev.scale.x * BLOCK_SIZE - Math.abs(delta);
+        sizeKey = 'sizeX';
+        posKey = 'x';
+        prevSize = prev.userData.sizeX;
+        currSize = curr.userData.sizeX;
+        prevPos = prev.position.x;
+        currPos = curr.position.x;
       } else {
         axis = 'z';
-        delta = curr.position.z - prev.position.z;
-        overlap = prev.scale.z * BLOCK_SIZE - Math.abs(delta);
+        sizeKey = 'sizeZ';
+        posKey = 'z';
+        prevSize = prev.userData.sizeZ;
+        currSize = curr.userData.sizeZ;
+        prevPos = prev.position.z;
+        currPos = curr.position.z;
       }
+
+      delta = currPos - prevPos;
+      overlap = prevSize - Math.abs(delta);
 
       if (overlap > 0) {
         // Trim block
-        const newSize = overlap / BLOCK_SIZE;
-        curr.scale[axis] = newSize;
+        const newSize = overlap;
+        const cutSize = currSize - overlap;
+        curr.scale[axis] = newSize / currSize;
         curr.position[axis] -= delta / 2;
+        curr.userData[sizeKey] = newSize;
         setScore(s => s + 1);
+
+        // Create falling piece
+        if (cutSize > 0.01) {
+          const cutPos = curr.position[axis] + (delta > 0 ? (newSize / 2 + cutSize / 2) : -(newSize / 2 + cutSize / 2));
+          const falling = addBlock(
+            curr.position.y,
+            axis === 'x' ? cutSize : curr.userData.sizeX,
+            axis === 'z' ? cutSize : curr.userData.sizeZ,
+            getColor(stack.length - 1),
+            axis === 'x' ? cutPos : curr.position.x,
+            axis === 'z' ? cutPos : curr.position.z
+          );
+          falling.userData = {
+            velocityY: 0,
+            rotation: (Math.random() - 0.5) * 0.1,
+            axis,
+            alive: true
+          };
+          fallingPieces.push(falling);
+        }
+
         // Add next block
         setTimeout(() => {
           addNewBlock();
@@ -147,6 +198,19 @@ const StackGame3D = () => {
           currentBlock.position.z += currentBlock.userData.speed * currentBlock.userData.moveDir;
           if (currentBlock.position.z > 8) currentBlock.userData.moveDir = -1;
           if (currentBlock.position.z < -8) currentBlock.userData.moveDir = 1;
+        }
+      }
+      // Animate falling pieces
+      for (let i = fallingPieces.length - 1; i >= 0; i--) {
+        const piece = fallingPieces[i];
+        if (!piece.userData.alive) continue;
+        piece.position.y -= FALL_SPEED;
+        piece.rotation[piece.userData.axis === 'x' ? 'z' : 'x'] += piece.userData.rotation;
+        piece.userData.velocityY -= GRAVITY;
+        if (piece.position.y < -20) {
+          scene.remove(piece);
+          piece.userData.alive = false;
+          fallingPieces.splice(i, 1);
         }
       }
       // Camera follows stack
