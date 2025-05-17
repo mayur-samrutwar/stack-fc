@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 
-const BLOCK_HEIGHT = 2;
+const BLOCK_HEIGHT = 1;
 const BLOCK_SIZE = 4;
 const BASE_HEIGHT = BLOCK_HEIGHT; // Base is same height as other blocks
-const MOVE_SPEED = 0.15;
+const INITIAL_MOVE_SPEED = 0.07;
+const SPEED_INCREMENT = 1.015;
+const MAX_MOVE_SPEED = 0.28;
 const FALL_SPEED = 0.2;
 const GRAVITY = 0.01;
 
@@ -30,6 +32,7 @@ const StackGame3D = () => {
     let cameraTargetY = 10;
     let cameraLerp = 0.1;
     let fallingPieces = [];
+    let moveSpeed = INITIAL_MOVE_SPEED;
 
     // --- SETUP ---
     scene = new THREE.Scene();
@@ -37,8 +40,8 @@ const StackGame3D = () => {
 
     // Camera: isometric 45deg, close-up
     camera = new THREE.PerspectiveCamera(45, 400 / 600, 0.1, 1000);
-    const camDist = 18; // closer
-    const camHeight = BLOCK_HEIGHT / 2 + 9; // match initial stack height + offset
+    const camDist = 10; // even closer
+    const camHeight = BLOCK_HEIGHT / 2 + 7; // a bit lower for more drama
     const camAngle = Math.PI / 4; // 45deg
     camera.position.set(
       Math.sin(camAngle) * camDist,
@@ -112,7 +115,7 @@ const StackGame3D = () => {
       if (direction === 1) x = -8; // Start from left
       if (direction === -1) z = -8; // Start from far
       const block = addBlock(y, sizeX, sizeZ, color, x, z);
-      block.userData = { direction, moveDir: 1, speed: MOVE_SPEED, sizeX, sizeZ };
+      block.userData = { direction, moveDir: 1, speed: moveSpeed, sizeX, sizeZ };
       currentBlock = block;
       stack.push(block);
       isMoving = true;
@@ -182,6 +185,9 @@ const StackGame3D = () => {
         }, 200);
         // Camera up
         cameraTargetY = curr.position.y + 9;
+
+        // Gradually increase speed, but cap it
+        moveSpeed = Math.min(moveSpeed * SPEED_INCREMENT, MAX_MOVE_SPEED);
       } else {
         // Game over
         setGameOver(true);
