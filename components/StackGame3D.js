@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { sdk } from '@farcaster/frame-sdk';
 
 const BLOCK_HEIGHT = 1;
 const BLOCK_SIZE = 4;
@@ -19,6 +20,7 @@ const StackGame3D = () => {
   const [restartKey, setRestartKey] = useState(0); // To force re-mount on restart
   const [baseHue, setBaseHue] = useState(() => Math.floor(Math.random() * 360));
   const [colorFamily, setColorFamily] = useState(() => Math.floor(Math.random() * 360));
+  const [shareUrl, setShareUrl] = useState('');
 
   // Curated palette of only bright, joyful, fresh hues
   const basePalette = [
@@ -65,6 +67,17 @@ const StackGame3D = () => {
     let fallingPieces = [];
     let moveSpeed = INITIAL_MOVE_SPEED;
     let gameOverCameraAnimation = null;
+
+    // Initialize Farcaster SDK
+    const initFarcaster = async () => {
+      try {
+        await sdk.actions.ready();
+      } catch (error) {
+        console.error('Failed to initialize Farcaster SDK:', error);
+      }
+    };
+
+    initFarcaster();
 
     // --- SETUP ---
     scene = new THREE.Scene();
@@ -354,6 +367,25 @@ const StackGame3D = () => {
         }
         
         animateCamera();
+
+        // Generate share URL with score
+        const shareUrl = `${window.location.origin}?score=${score}`;
+        setShareUrl(shareUrl);
+
+        // Update meta tags for sharing
+        const metaFrame = document.querySelector('meta[name="fc:frame"]');
+        if (metaFrame) {
+          metaFrame.content = JSON.stringify({
+            image: `${window.location.origin}/og-image.png`,
+            buttons: [
+              {
+                label: `Play Stack Game - Score: ${score}`,
+                action: 'link',
+                target: shareUrl
+              }
+            ]
+          });
+        }
       }
     }
 
@@ -464,6 +496,17 @@ const StackGame3D = () => {
         >
           <div className="w-full flex flex-col items-center mb-16">
             <span className="text-3xl md:text-4xl font-thin text-black tracking-wide mb-4">TAP TO RESTART</span>
+            {shareUrl && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.open(shareUrl, '_blank');
+                }}
+                className="mt-4 px-6 py-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors"
+              >
+                Share Score
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -1,0 +1,18 @@
+{
+  "name": "Stack Game",
+  "description": "A 3D stacking game where you try to stack blocks as high as possible",
+  "image": "https://i.ibb.co/7tLbjHPR/Screenshot-2025-05-18-at-1-54-46-PM.png",
+  "external_url": "https://stack-fc.vercel.app",
+  "app_url": "https://stack-fc.vercel.app",
+  "app_domain": "stack-fc.vercel.app",
+  "app_version": "1.0.0",
+  "app_type": "game",
+  "app_category": "games",
+  "app_platform": "web",
+  "app_developer": "astro",
+  "app_developer_url": "https://warpcast.com/mrsr",
+  "app_developer_verification": {
+    "type": "farcaster",
+    "username": "mrsr"
+  }
+} 
