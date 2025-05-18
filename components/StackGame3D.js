@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { sdk } from '@farcaster/frame-sdk';
 
 const BLOCK_HEIGHT = 1;
 const BLOCK_SIZE = 4;
@@ -20,39 +19,74 @@ const StackGame3D = () => {
   const [restartKey, setRestartKey] = useState(0); // To force re-mount on restart
   const [baseHue, setBaseHue] = useState(() => Math.floor(Math.random() * 360));
   const [colorFamily, setColorFamily] = useState(() => Math.floor(Math.random() * 360));
-  const [shareUrl, setShareUrl] = useState('');
 
-  // Curated palette of only bright, joyful, fresh hues
-  const basePalette = [
-    48, 52,   // yellow
-    24, 30,   // orange/peach
-    340, 350, // pink
-    320,      // magenta
-    200, 210, // sky blue
-    170, 160, // mint
-    120, 100  // light green
+  // Direct palette of cheerful, bright colors
+  const cheerfulColors = [
+    '#FF69B4', // Hot Pink
+    '#40E0D0', // Turquoise
+    '#7CFC00', // Lawn Green
+    '#FF6347', // Tomato
+    '#00BFFF', // Deep Sky Blue
+    '#FFA500', // Orange
+    '#BA55D3', // Medium Orchid
+    '#00FA9A', // Medium Spring Green
+    '#FF4500', // Orange Red
+    '#1E90FF', // Dodger Blue
+    '#39FF14', // Neon Green
+    '#FF00FF', // Magenta
+    '#00FFFF', // Aqua
+    '#FF1493', // Deep Pink
+    '#00FF00', // Bright Green
+    '#FF0000', // Red
+    '#FFFF00', // Yellow
+    '#00FFEF', // Bright Cyan
+    '#FF5F1F', // Vivid Orange
   ];
-  // Shuffle palette at game start
-  const [palette, setPalette] = useState([]);
 
-  function shuffle(arr) {
-    const a = arr.slice();
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
+  // Helper to convert hex to HSL
+  function hexToHSL(hex) {
+    let r = 0, g = 0, b = 0;
+    if (hex.length === 4) {
+      r = '0x' + hex[1] + hex[1];
+      g = '0x' + hex[2] + hex[2];
+      b = '0x' + hex[3] + hex[3];
+    } else if (hex.length === 7) {
+      r = '0x' + hex[1] + hex[2];
+      g = '0x' + hex[3] + hex[4];
+      b = '0x' + hex[5] + hex[6];
     }
-    return a;
+    r = +r; g = +g; b = +b;
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h, s, l = (max + min) / 2;
+    if (max === min) {
+      h = s = 0;
+    } else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      h /= 6;
+    }
+    return {
+      h: Math.round(h * 360),
+      s: Math.round(s * 100),
+      l: Math.round(l * 100)
+    };
   }
 
   function getColor(level) {
     const blocksPerColor = 4;
-    if (!palette.length) return 'hsl(48,96%,72%)'; // fallback vivid yellow
-    const colorIdx = Math.floor(level / blocksPerColor) % palette.length;
-    const hue = palette[colorIdx];
-    // Joyful: very high saturation, high lightness
-    const sat = 94 + ((level % blocksPerColor) * 1.5); // 94-98%
-    const light = 75 - ((level % blocksPerColor) * 2.5); // 75, 72.5, 70, 67.5
-    return `hsl(${hue}, ${sat}%, ${light}%)`;
+    const colorIdx = Math.floor(level / blocksPerColor) % cheerfulColors.length;
+    const baseHex = cheerfulColors[colorIdx];
+    const shadeIdx = level % blocksPerColor;
+    const baseHSL = hexToHSL(baseHex);
+    // Make 4 shades: from lighter to normal
+    const lightness = baseHSL.l + 10 - shadeIdx * 5; // e.g. 4 blocks: 10, 5, 0, -5
+    return `hsl(${baseHSL.h}, ${baseHSL.s}%, ${Math.max(40, Math.min(90, lightness))}%)`;
   }
 
   useEffect(() => {
@@ -67,17 +101,6 @@ const StackGame3D = () => {
     let fallingPieces = [];
     let moveSpeed = INITIAL_MOVE_SPEED;
     let gameOverCameraAnimation = null;
-
-    // Initialize Farcaster SDK
-    const initFarcaster = async () => {
-      try {
-        await sdk.actions.ready();
-      } catch (error) {
-        console.error('Failed to initialize Farcaster SDK:', error);
-      }
-    };
-
-    initFarcaster();
 
     // --- SETUP ---
     scene = new THREE.Scene();
@@ -139,18 +162,7 @@ const StackGame3D = () => {
         new THREE.MeshPhongMaterial({ color: frontColor }), // front (+Z) - darkest
         new THREE.MeshPhongMaterial({ color: frontColor })  // back (-Z) - darkest
       ];
-      // If stacking in Z, rotate the material array so front/right are correct
-      if (direction === -1) {
-        // Swap right (+X) and front (+Z) materials
-        materials = [
-          new THREE.MeshPhongMaterial({ color: frontColor }), // right (+X) now gets front shade
-          new THREE.MeshPhongMaterial({ color: frontColor }), // left (-X)
-          new THREE.MeshPhongMaterial({ color: topColor }),
-          new THREE.MeshPhongMaterial({ color: frontColor }),
-          new THREE.MeshPhongMaterial({ color: rightColor }), // front (+Z) now gets right shade
-          new THREE.MeshPhongMaterial({ color: frontColor })
-        ];
-      }
+      // Removed direction-based swapping for consistent shading
       const geometry = new THREE.BoxGeometry(sizeX, customHeight, sizeZ);
       const mesh = new THREE.Mesh(geometry, materials);
       mesh.position.set(x, y, z);
@@ -162,7 +174,6 @@ const StackGame3D = () => {
     }
 
     function startGame() {
-      setPalette(shuffle(basePalette));
       // Remove all blocks
       stack.forEach(b => scene.remove(b));
       stack = [];
@@ -175,16 +186,16 @@ const StackGame3D = () => {
       setColorFamily(Math.floor(Math.random() * 360)); // New color family each game
 
       // Add base block (double height), always X direction
-      const base = addBlock(BLOCK_HEIGHT, BLOCK_SIZE, BLOCK_SIZE, getColor(0), 0, 0, BLOCK_HEIGHT * 2, 1);
+      const base = addBlock(0, BLOCK_SIZE, BLOCK_SIZE, getColor(0), 0, 0, BLOCK_HEIGHT * 2, 1);
       base.userData = { sizeX: BLOCK_SIZE, sizeZ: BLOCK_SIZE, height: BLOCK_HEIGHT * 2, direction: 1 };
       stack.push(base);
 
-      // Add first playable block
-      addNewBlock();
+      // Add first playable block directly above base, not from the side
+      addNewBlock(true);
     }
 
-    function addNewBlock() {
-      direction = -direction; // Alternate direction
+    function addNewBlock(isFirst = false) {
+      if (!isFirst) direction = -direction; // Alternate direction except for first
       lastBlock = stack[stack.length - 1];
       // Always place new block exactly on top of the previous block, regardless of height
       const prevY = lastBlock.position.y;
@@ -202,8 +213,10 @@ const StackGame3D = () => {
       const moveRangeZ = prevSizeZ;
       let x = baseX;
       let z = baseZ;
-      if (direction === 1) x = baseX - moveRangeX;
-      if (direction === -1) z = baseZ - moveRangeZ;
+      if (!isFirst) {
+        if (direction === 1) x = baseX - moveRangeX;
+        if (direction === -1) z = baseZ - moveRangeZ;
+      }
       const block = addBlock(y, sizeX, sizeZ, color, x, z, BLOCK_HEIGHT, direction);
       block.userData = { direction, moveDir: 1, speed: moveSpeed, sizeX, sizeZ, moveRangeX, moveRangeZ, baseX, baseZ, height: BLOCK_HEIGHT, direction };
       currentBlock = block;
@@ -367,25 +380,6 @@ const StackGame3D = () => {
         }
         
         animateCamera();
-
-        // Generate share URL with score
-        const shareUrl = `${window.location.origin}?score=${score}`;
-        setShareUrl(shareUrl);
-
-        // Update meta tags for sharing
-        const metaFrame = document.querySelector('meta[name="fc:frame"]');
-        if (metaFrame) {
-          metaFrame.content = JSON.stringify({
-            image: `${window.location.origin}/og-image.png`,
-            buttons: [
-              {
-                label: `Play Stack Game - Score: ${score}`,
-                action: 'link',
-                target: shareUrl
-              }
-            ]
-          });
-        }
       }
     }
 
@@ -496,17 +490,6 @@ const StackGame3D = () => {
         >
           <div className="w-full flex flex-col items-center mb-16">
             <span className="text-3xl md:text-4xl font-thin text-black tracking-wide mb-4">TAP TO RESTART</span>
-            {shareUrl && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  window.open(shareUrl, '_blank');
-                }}
-                className="mt-4 px-6 py-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors"
-              >
-                Share Score
-              </button>
-            )}
           </div>
         </div>
       )}
