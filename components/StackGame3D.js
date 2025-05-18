@@ -17,6 +17,7 @@ const StackGame3D = () => {
   const mountRef = useRef(null);
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
   const [restartKey, setRestartKey] = useState(0); // To force re-mount on restart
   const [baseHue, setBaseHue] = useState(() => Math.floor(Math.random() * 360));
   const [colorFamily, setColorFamily] = useState(() => Math.floor(Math.random() * 360));
@@ -464,8 +465,14 @@ const StackGame3D = () => {
 
     // --- EVENT HANDLING ---
     function handleClick() {
+      if (!gameStarted) {
+        setGameStarted(true);
+        startGame();
+        return;
+      }
       if (gameOver) {
         setRestartKey(k => k + 1);
+        setGameStarted(false);
       } else {
         placeBlock();
       }
@@ -473,7 +480,9 @@ const StackGame3D = () => {
     renderer.domElement.addEventListener('pointerdown', handleClick);
 
     // --- START GAME ---
-    startGame();
+    if (gameStarted) {
+      startGame();
+    }
     animate();
 
     // --- CLEANUP ---
@@ -484,17 +493,30 @@ const StackGame3D = () => {
       renderer.dispose();
     };
     // eslint-disable-next-line
-  }, [restartKey]);
+  }, [restartKey, gameStarted]);
 
   // Overlay UI
   return (
     <div className={styles.stackGameContainer}>
       <div ref={mountRef} className={styles.gameCanvas} />
       {/* Score always at the top, over game only */}
-      <div className={styles.scoreDisplay}>
-        <div className={styles.scoreText}>{score}</div>
-      </div>
-      {/* Game Over Overlay, over game only */}
+      {gameStarted && (
+        <div className={styles.scoreDisplay}>
+          <div className={styles.scoreText}>{score}</div>
+        </div>
+      )}
+      {/* Start Overlay */}
+      {!gameStarted && (
+        <div
+          className={styles.startOverlay}
+          onClick={() => setGameStarted(true)}
+        >
+          <div className={styles.startContent}>
+            <span className={styles.startText}>TAP TO START</span>
+          </div>
+        </div>
+      )}
+      {/* Game Over Overlay */}
       {gameOver && (
         <div
           className={styles.gameOverOverlay}
