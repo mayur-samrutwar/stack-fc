@@ -1,4 +1,5 @@
 import Head from 'next/head';
+import styles from './Layout.module.css'
 
 const FarcasterLayout = ({ children }) => {
   return (
@@ -22,7 +23,7 @@ const FarcasterLayout = ({ children }) => {
           ]
         })} />
       </Head>
-      <main className="min-h-screen flex items-center justify-center bg-gray-100">
+      <main className="main-container">
         {children}
       </main>
     </>

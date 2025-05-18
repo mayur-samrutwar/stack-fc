@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import styles from './StackGame3D.module.css';
 
 const BLOCK_HEIGHT = 1;
 const BLOCK_SIZE = 4;
@@ -487,20 +488,20 @@ const StackGame3D = () => {
 
   // Overlay UI
   return (
-    <div className="relative w-[400px] h-[600px]">
-      <div ref={mountRef} className="w-full h-full" />
+    <div className={styles.stackGameContainer}>
+      <div ref={mountRef} className={styles.gameCanvas} />
       {/* Score always at the top, over game only */}
-      <div className="absolute top-8 left-0 w-full flex flex-col items-center pointer-events-none select-none z-20">
-        <div className="text-5xl font-thin text-gray-800 mt-8">{score}</div>
+      <div className={styles.scoreDisplay}>
+        <div className={styles.scoreText}>{score}</div>
       </div>
       {/* Game Over Overlay, over game only */}
       {gameOver && (
         <div
-          className="absolute inset-0 flex flex-col justify-end items-center z-30 cursor-pointer select-none"
+          className={styles.gameOverOverlay}
           onClick={() => setRestartKey(k => k + 1)}
         >
-          <div className="w-full flex flex-col items-center mb-16">
-            <span className="text-3xl md:text-4xl font-thin text-black tracking-wide mb-4">TAP TO RESTART</span>
+          <div className={styles.gameOverContent}>
+            <span className={styles.gameOverText}>TAP TO RESTART</span>
           </div>
         </div>
       )}

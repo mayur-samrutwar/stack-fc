@@ -1,0 +1,64 @@
+.stackGameContainer {
+  position: relative;
+  width: 400px;
+  height: 600px;
+}
+
+.gameCanvas {
+  width: 100%;
+  height: 100%;
+}
+
+.scoreDisplay {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  user-select: none;
+  z-index: 20;
+}
+
+.scoreText {
+  font-size: 3rem;
+  font-weight: 200;
+  color: #1f2937;
+  margin-top: 32px;
+}
+
+.gameOverOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  z-index: 30;
+  cursor: pointer;
+  user-select: none;
+}
+
+.gameOverContent {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 64px;
+}
+
+.gameOverText {
+  font-size: 1.875rem;
+  font-weight: 200;
+  color: black;
+  letter-spacing: 0.025em;
+  margin-bottom: 16px;
+}
+
+@media (min-width: 768px) {
+  .gameOverText {
+    font-size: 2.25rem;
+  }
+} 
