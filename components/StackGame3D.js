@@ -5,7 +5,7 @@ const BLOCK_HEIGHT = 1;
 const BLOCK_SIZE = 4;
 const BASE_HEIGHT = BLOCK_HEIGHT; // Base is same height as other blocks
 const INITIAL_MOVE_SPEED = 0.04;
-const SPEED_INCREMENT = 0.0001; // Linear increment per block
+const SPEED_INCREMENT = 0.0005; // Much slower, smoother speed increase
 const MAX_MOVE_SPEED = 0.28;
 const FALL_SPEED = 0.2;
 const GRAVITY = 0.03; // slower gravity for realism
@@ -18,18 +18,15 @@ const StackGame3D = () => {
   const [gameOver, setGameOver] = useState(false);
   const [restartKey, setRestartKey] = useState(0); // To force re-mount on restart
   const [baseHue, setBaseHue] = useState(() => Math.floor(Math.random() * 360));
+  const [colorFamily, setColorFamily] = useState(() => Math.floor(Math.random() * 360));
 
+  // Improved color system: fixed hue, gradient by lightness/saturation
   function getColor(level) {
-    // Use a smaller hue step for more subtle color changes
-    const hueStep = 8; // Smaller step for more subtle changes
-    const hue = (baseHue + level * hueStep) % 360;
-    
-    // Higher saturation for more vibrant colors
-    const sat = 85 + (level * 0.1) % 10; // 85-95% saturation
-    
-    // Higher lightness for brighter, softer colors
-    const light = 75 + (level * 0.2) % 10; // 75-85% lightness
-    
+    const hue = colorFamily;
+    // Lightness decreases as stack grows, but stays bright
+    const light = 80 - Math.min(level * 3, 35); // 80% to 45%
+    // Saturation slightly decreases for a soft look
+    const sat = 85 - Math.min(level * 1.5, 25); // 85% to 60%
     return `hsl(${hue}, ${sat}%, ${light}%)`;
   }
 
@@ -44,22 +41,35 @@ const StackGame3D = () => {
     let cameraLerp = 0.1;
     let fallingPieces = [];
     let moveSpeed = INITIAL_MOVE_SPEED;
+    let gameOverCameraAnimation = null;
 
     // --- SETUP ---
     scene = new THREE.Scene();
-    scene.background = new THREE.Color('#f3f4f6');
+    
+    // Create gradient background
+    const canvas = document.createElement('canvas');
+    canvas.width = 2;
+    canvas.height = 2;
+    const context = canvas.getContext('2d');
+    const gradient = context.createLinearGradient(0, 0, 0, 2);
+    gradient.addColorStop(0, '#e0f2fe');  // Light blue at top
+    gradient.addColorStop(1, '#bae6fd');  // Slightly darker blue at bottom
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 2, 2);
+    const texture = new THREE.CanvasTexture(canvas);
+    scene.background = texture;
 
     // Camera: isometric 45deg, close-up
     camera = new THREE.PerspectiveCamera(45, 400 / 600, 0.1, 1000);
     const camDist = 12; // a bit further for a wider view
-    const camHeight = 4; // much lower for a more side-on look
+    const camHeight = 1.5; // lower camera for lower stack start
     const camAngle = Math.PI / 4; // 45deg
     camera.position.set(
       Math.sin(camAngle) * camDist,
       camHeight,
       Math.cos(camAngle) * camDist
     );
-    camera.lookAt(0, camHeight - 9, 0); // Look at the base
+    camera.lookAt(0, camHeight - 11, 0); // Look lower for initial stack
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(400, 600);
@@ -73,15 +83,6 @@ const StackGame3D = () => {
     dirLight.castShadow = true;
     scene.add(dirLight);
 
-    // Ground
-    const groundGeometry = new THREE.PlaneGeometry(40, 40);
-    const groundMaterial = new THREE.MeshPhongMaterial({ color: '#e0e7ef' });
-    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -BLOCK_HEIGHT / 2 - 0.01;
-    ground.receiveShadow = true;
-    scene.add(ground);
-
     // --- GAME LOGIC ---
     function addBlock(y, sizeX, sizeZ, color, x = 0, z = 0, customHeight = BLOCK_HEIGHT) {
       const geometry = new THREE.BoxGeometry(sizeX, customHeight, sizeZ);
@@ -91,6 +92,7 @@ const StackGame3D = () => {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       scene.add(mesh);
+      mesh.userData.height = customHeight;
       return mesh;
     }
 
@@ -104,11 +106,11 @@ const StackGame3D = () => {
       setScore(0);
       setGameOver(false);
       fallingPieces = [];
-      setBaseHue(Math.floor(Math.random() * 360)); // New color family each game
+      setColorFamily(Math.floor(Math.random() * 360)); // New color family each game
 
-      // Add base block (tall)
-      const base = addBlock(BLOCK_HEIGHT / 2, BLOCK_SIZE, BLOCK_SIZE, getColor(0), 0, 0, BLOCK_HEIGHT);
-      base.userData = { sizeX: BLOCK_SIZE, sizeZ: BLOCK_SIZE };
+      // Add base block (double height), center at BLOCK_HEIGHT so bottom is at y=0
+      const base = addBlock(BLOCK_HEIGHT, BLOCK_SIZE, BLOCK_SIZE, getColor(0), 0, 0, BLOCK_HEIGHT * 2);
+      base.userData = { sizeX: BLOCK_SIZE, sizeZ: BLOCK_SIZE, height: BLOCK_HEIGHT * 2 };
       stack.push(base);
 
       // Add first playable block
@@ -118,18 +120,26 @@ const StackGame3D = () => {
     function addNewBlock() {
       direction = -direction; // Alternate direction
       lastBlock = stack[stack.length - 1];
-      const y = BLOCK_HEIGHT / 2 + stack.length * BLOCK_HEIGHT;
+      // Always place new block exactly on top of the previous block, regardless of height
+      const prevY = lastBlock.position.y;
+      const prevHeight = lastBlock.userData.height || BLOCK_HEIGHT;
+      const y = prevY + (prevHeight / 2) + (BLOCK_HEIGHT / 2);
       const color = getColor(stack.length);
-      let x = lastBlock.position.x;
-      let z = lastBlock.position.z;
-      let sizeX = lastBlock.userData.sizeX;
-      let sizeZ = lastBlock.userData.sizeZ;
-      const moveRangeX = sizeX * 1.2;
-      const moveRangeZ = sizeZ * 1.2;
-      if (direction === 1) x = -moveRangeX; // Start just outside left
-      if (direction === -1) z = -moveRangeZ; // Start just outside far
+      let prevSizeX = lastBlock.userData.sizeX;
+      let prevSizeZ = lastBlock.userData.sizeZ;
+      let sizeX = prevSizeX;
+      let sizeZ = prevSizeZ;
+      let baseX = lastBlock.position.x;
+      let baseZ = lastBlock.position.z;
+      // Movement range: previous block's size
+      const moveRangeX = prevSizeX;
+      const moveRangeZ = prevSizeZ;
+      let x = baseX;
+      let z = baseZ;
+      if (direction === 1) x = baseX - moveRangeX;
+      if (direction === -1) z = baseZ - moveRangeZ;
       const block = addBlock(y, sizeX, sizeZ, color, x, z);
-      block.userData = { direction, moveDir: 1, speed: moveSpeed, sizeX, sizeZ, moveRangeX, moveRangeZ };
+      block.userData = { direction, moveDir: 1, speed: moveSpeed, sizeX, sizeZ, moveRangeX, moveRangeZ, baseX, baseZ, height: BLOCK_HEIGHT };
       currentBlock = block;
       stack.push(block);
       isMoving = true;
@@ -185,7 +195,6 @@ const StackGame3D = () => {
             axis === 'x' ? cutPos : curr.position.x,
             axis === 'z' ? cutPos : curr.position.z
           );
-          // Give the falling piece a push and spin
           falling.userData = {
             velocityY: 0,
             velocityX: axis === 'x' ? (delta > 0 ? 0.08 : -0.08) : 0,
@@ -230,6 +239,46 @@ const StackGame3D = () => {
         fallingPieces.push(falling);
         scene.remove(last); // Remove the last block from the stack
         setGameOver(true);
+
+        // Start game over camera animation
+        const stackHeight = stack.length * BLOCK_HEIGHT;
+        const targetDistance = Math.max(30, stackHeight * 2); // Distance based on stack height
+        const targetHeight = stackHeight * 0.7; // Keep camera below the top of the stack
+        
+        // Cancel any existing animation
+        if (gameOverCameraAnimation) {
+          cancelAnimationFrame(gameOverCameraAnimation);
+        }
+
+        // Animate camera to new position
+        const startTime = Date.now();
+        const duration = 2000; // 2 seconds animation
+        const startPos = camera.position.clone();
+        const startLook = new THREE.Vector3(0, camera.position.y - 9, 0);
+        
+        function animateCamera() {
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          
+          // Ease out cubic
+          const eased = 1 - Math.pow(1 - progress, 3);
+          
+          // Calculate new camera position
+          const newPos = new THREE.Vector3(
+            Math.sin(camAngle) * targetDistance,
+            targetHeight,
+            Math.cos(camAngle) * targetDistance
+          );
+          
+          camera.position.lerpVectors(startPos, newPos, eased);
+          camera.lookAt(0, 0, 0); // Look at the base
+          
+          if (progress < 1) {
+            gameOverCameraAnimation = requestAnimationFrame(animateCamera);
+          }
+        }
+        
+        animateCamera();
       }
     }
 
@@ -237,14 +286,16 @@ const StackGame3D = () => {
       if (isMoving && currentBlock && !gameOver) {
         if (direction === 1) {
           currentBlock.position.x += currentBlock.userData.speed * currentBlock.userData.moveDir;
+          const baseX = currentBlock.userData.baseX;
           const maxX = currentBlock.userData.moveRangeX;
-          if (currentBlock.position.x > maxX) currentBlock.userData.moveDir = -1;
-          if (currentBlock.position.x < -maxX) currentBlock.userData.moveDir = 1;
+          if (currentBlock.position.x > baseX + maxX) currentBlock.userData.moveDir = -1;
+          if (currentBlock.position.x < baseX - maxX) currentBlock.userData.moveDir = 1;
         } else {
           currentBlock.position.z += currentBlock.userData.speed * currentBlock.userData.moveDir;
+          const baseZ = currentBlock.userData.baseZ;
           const maxZ = currentBlock.userData.moveRangeZ;
-          if (currentBlock.position.z > maxZ) currentBlock.userData.moveDir = -1;
-          if (currentBlock.position.z < -maxZ) currentBlock.userData.moveDir = 1;
+          if (currentBlock.position.z > baseZ + maxZ) currentBlock.userData.moveDir = -1;
+          if (currentBlock.position.z < baseZ - maxZ) currentBlock.userData.moveDir = 1;
         }
       }
       // Animate falling pieces
@@ -324,21 +375,23 @@ const StackGame3D = () => {
 
   // Overlay UI
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
-      <div ref={mountRef} className="rounded-lg shadow-lg" />
-      <div className="absolute top-10 left-0 w-full flex flex-col items-center pointer-events-none select-none">
+    <div className="relative w-[400px] h-[600px]">
+      <div ref={mountRef} className="w-full h-full" />
+      {/* Score always at the top, over game only */}
+      <div className="absolute top-8 left-0 w-full flex flex-col items-center pointer-events-none select-none z-20">
         <div className="text-5xl font-light text-gray-800 drop-shadow-lg">{score}</div>
-        {gameOver && (
-          <div className="mt-8 text-2xl text-gray-700 font-light pointer-events-auto">
-            <button
-              className="bg-white/80 px-8 py-3 rounded-xl shadow text-gray-800 font-light text-2xl"
-              onClick={() => setRestartKey(k => k + 1)}
-            >
-              TAP TO RESTART
-            </button>
-          </div>
-        )}
       </div>
+      {/* Game Over Overlay, over game only */}
+      {gameOver && (
+        <div
+          className="absolute inset-0 flex flex-col justify-end items-center bg-black/20 z-30 cursor-pointer select-none"
+          onClick={() => setRestartKey(k => k + 1)}
+        >
+          <div className="w-full flex flex-col items-center mb-16">
+            <span className="text-3xl md:text-4xl font-light text-white drop-shadow-lg tracking-wide mb-4">TAP TO RESTART</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
