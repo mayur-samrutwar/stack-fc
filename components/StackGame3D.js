@@ -22,25 +22,36 @@ const StackGame3D = () => {
 
   // Direct palette of cheerful, bright colors
   const cheerfulColors = [
-    '#FF69B4', // Hot Pink
-    '#40E0D0', // Turquoise
-    '#7CFC00', // Lawn Green
-    '#FF6347', // Tomato
-    '#00BFFF', // Deep Sky Blue
-    '#FFA500', // Orange
-    '#BA55D3', // Medium Orchid
-    '#00FA9A', // Medium Spring Green
-    '#FF4500', // Orange Red
-    '#1E90FF', // Dodger Blue
-    '#39FF14', // Neon Green
-    '#FF00FF', // Magenta
-    '#00FFFF', // Aqua
-    '#FF1493', // Deep Pink
-    '#00FF00', // Bright Green
-    '#FF0000', // Red
-    '#FFFF00', // Yellow
-    '#00FFEF', // Bright Cyan
-    '#FF5F1F', // Vivid Orange
+    '#fff44f', // Lemon Yellow
+    '#ffad05', // Bright Orange
+    '#ff6363', // Bright Coral
+    '#ff5ec6', // Hot Pink
+    '#ff7eb9', // Pink
+    '#f08ed3', // Cheerful Pink
+    '#a685e2', // Soft Purple
+    '#8cff1f', // Fresh Green
+    '#7cfc00', // Neon Green
+    '#54ff9f', // Mint
+    '#36dbca', // Bright Turquoise
+    '#00fff7', // Aqua
+    '#00c6cc', // Bright Aqua
+    '#5eda9e', // Soft Green
+    '#bdfcc9', // Light Mint
+    '#aee9fc', // Sky Blue
+    '#82fff4', // Light Cyan
+    '#a0e7e5', // Pastel Blue
+    '#b4f8c8', // Pastel Mint
+    '#e9ff39', // Bright Lime Yellow
+    '#f9f871', // Bright Lemon
+    '#f6f7d7', // Light Cream
+    '#ffd6e0', // Soft Pink
+    '#fbe7c6', // Light Peach
+    '#f9c846', // Bright Gold
+    '#f7b32b', // Bright Mustard
+    '#f6abb6', // Light Rose
+    '#f9a1bc', // Light Pink
+    '#f08fc0', // Light Magenta
+    '#ab8ee5', // Playful Purple
   ];
 
   // Helper to convert hex to HSL
@@ -150,9 +161,9 @@ const StackGame3D = () => {
         const newL = Math.max(0, Math.min(100, l + percent));
         return `hsl(${h}, ${s}%, ${newL}%)`;
       }
-      const topColor = color;
-      const rightColor = shade(color, -18); // medium
-      const frontColor = shade(color, -35); // darkest
+      const topColor = shade(color, +10);      // top is lighter
+      const rightColor = shade(color, -5);     // right is just a bit darker
+      const frontColor = shade(color, -15);    // front is a bit more, but still light
       // Order: [right(+X), left(-X), top(+Y), bottom(-Y), front(+Z), back(-Z)]
       let materials = [
         new THREE.MeshPhongMaterial({ color: rightColor }), // right (+X)
