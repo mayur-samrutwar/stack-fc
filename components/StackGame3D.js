@@ -162,7 +162,7 @@ const StackGame3D = () => {
         const newL = Math.max(0, Math.min(100, l + percent));
         return `hsl(${h}, ${s}%, ${newL}%)`;
       }
-      const topColor = shade(color, +10);      // top is lighter
+      const topColor = shade(color, +0);      // top is lighter
       const rightColor = shade(color, -5);     // right is just a bit darker
       const frontColor = shade(color, -15);    // front is a bit more, but still light
       // Order: [right(+X), left(-X), top(+Y), bottom(-Y), front(+Z), back(-Z)]
