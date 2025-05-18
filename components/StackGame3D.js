@@ -20,13 +20,36 @@ const StackGame3D = () => {
   const [baseHue, setBaseHue] = useState(() => Math.floor(Math.random() * 360));
   const [colorFamily, setColorFamily] = useState(() => Math.floor(Math.random() * 360));
 
-  // Improved color system: fixed hue, gradient by lightness/saturation
+  // Curated palette of only bright, joyful, fresh hues
+  const basePalette = [
+    48, 52,   // yellow
+    24, 30,   // orange/peach
+    340, 350, // pink
+    320,      // magenta
+    200, 210, // sky blue
+    170, 160, // mint
+    120, 100  // light green
+  ];
+  // Shuffle palette at game start
+  const [palette, setPalette] = useState([]);
+
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
   function getColor(level) {
-    const hue = colorFamily;
-    // Lightness decreases as stack grows, but stays bright
-    const light = 80 - Math.min(level * 3, 35); // 80% to 45%
-    // Saturation slightly decreases for a soft look
-    const sat = 85 - Math.min(level * 1.5, 25); // 85% to 60%
+    const blocksPerColor = 4;
+    if (!palette.length) return 'hsl(48,96%,72%)'; // fallback vivid yellow
+    const colorIdx = Math.floor(level / blocksPerColor) % palette.length;
+    const hue = palette[colorIdx];
+    // Joyful: very high saturation, high lightness
+    const sat = 94 + ((level % blocksPerColor) * 1.5); // 94-98%
+    const light = 75 - ((level % blocksPerColor) * 2.5); // 75, 72.5, 70, 67.5
     return `hsl(${hue}, ${sat}%, ${light}%)`;
   }
 
@@ -45,31 +68,29 @@ const StackGame3D = () => {
 
     // --- SETUP ---
     scene = new THREE.Scene();
-    
-    // Create gradient background
     const canvas = document.createElement('canvas');
     canvas.width = 2;
-    canvas.height = 2;
+    canvas.height = 256;
     const context = canvas.getContext('2d');
-    const gradient = context.createLinearGradient(0, 0, 0, 2);
-    gradient.addColorStop(0, '#e0f2fe');  // Light blue at top
-    gradient.addColorStop(1, '#bae6fd');  // Slightly darker blue at bottom
+    const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, '#e2e8f0'); // top (light slate)
+    gradient.addColorStop(1, '#cbd5e1'); // bottom (slate gray)
     context.fillStyle = gradient;
-    context.fillRect(0, 0, 2, 2);
+    context.fillRect(0, 0, canvas.width, canvas.height);
     const texture = new THREE.CanvasTexture(canvas);
     scene.background = texture;
-
+    
     // Camera: isometric 45deg, close-up
     camera = new THREE.PerspectiveCamera(45, 400 / 600, 0.1, 1000);
-    const camDist = 12; // a bit further for a wider view
-    const camHeight = 1.5; // lower camera for lower stack start
+    const camDist = 12;
+    const camHeight = -3; // much lower camera for base near bottom
     const camAngle = Math.PI / 4; // 45deg
     camera.position.set(
       Math.sin(camAngle) * camDist,
       camHeight,
       Math.cos(camAngle) * camDist
     );
-    camera.lookAt(0, camHeight - 11, 0); // Look lower for initial stack
+    camera.lookAt(0, camHeight - 15, 0); // Look even lower for initial stack
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(400, 600);
@@ -77,17 +98,48 @@ const StackGame3D = () => {
     mountRef.current.appendChild(renderer.domElement);
 
     // Lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55)); // slightly dimmer ambient
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1); // stronger directional
     dirLight.position.set(10, 20, 10);
     dirLight.castShadow = true;
     scene.add(dirLight);
 
     // --- GAME LOGIC ---
-    function addBlock(y, sizeX, sizeZ, color, x = 0, z = 0, customHeight = BLOCK_HEIGHT) {
+    function addBlock(y, sizeX, sizeZ, color, x = 0, z = 0, customHeight = BLOCK_HEIGHT, direction = 1) {
+      // Calculate three shades for 3D effect
+      function shade(hsl, percent) {
+        const match = hsl.match(/hsl\((\d+), (\d+)%?, (\d+)%?\)/);
+        if (!match) return hsl;
+        const [h, s, l] = match.slice(1).map(Number);
+        const newL = Math.max(0, Math.min(100, l + percent));
+        return `hsl(${h}, ${s}%, ${newL}%)`;
+      }
+      const topColor = color;
+      const rightColor = shade(color, -18); // medium
+      const frontColor = shade(color, -35); // darkest
+      // Order: [right(+X), left(-X), top(+Y), bottom(-Y), front(+Z), back(-Z)]
+      let materials = [
+        new THREE.MeshPhongMaterial({ color: rightColor }), // right (+X)
+        new THREE.MeshPhongMaterial({ color: frontColor }), // left (-X) - darkest
+        new THREE.MeshPhongMaterial({ color: topColor }),   // top (+Y)
+        new THREE.MeshPhongMaterial({ color: frontColor }), // bottom (-Y) - darkest
+        new THREE.MeshPhongMaterial({ color: frontColor }), // front (+Z) - darkest
+        new THREE.MeshPhongMaterial({ color: frontColor })  // back (-Z) - darkest
+      ];
+      // If stacking in Z, rotate the material array so front/right are correct
+      if (direction === -1) {
+        // Swap right (+X) and front (+Z) materials
+        materials = [
+          new THREE.MeshPhongMaterial({ color: frontColor }), // right (+X) now gets front shade
+          new THREE.MeshPhongMaterial({ color: frontColor }), // left (-X)
+          new THREE.MeshPhongMaterial({ color: topColor }),
+          new THREE.MeshPhongMaterial({ color: frontColor }),
+          new THREE.MeshPhongMaterial({ color: rightColor }), // front (+Z) now gets right shade
+          new THREE.MeshPhongMaterial({ color: frontColor })
+        ];
+      }
       const geometry = new THREE.BoxGeometry(sizeX, customHeight, sizeZ);
-      const material = new THREE.MeshPhongMaterial({ color });
-      const mesh = new THREE.Mesh(geometry, material);
+      const mesh = new THREE.Mesh(geometry, materials);
       mesh.position.set(x, y, z);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -97,6 +149,7 @@ const StackGame3D = () => {
     }
 
     function startGame() {
+      setPalette(shuffle(basePalette));
       // Remove all blocks
       stack.forEach(b => scene.remove(b));
       stack = [];
@@ -108,9 +161,9 @@ const StackGame3D = () => {
       fallingPieces = [];
       setColorFamily(Math.floor(Math.random() * 360)); // New color family each game
 
-      // Add base block (double height), center at BLOCK_HEIGHT so bottom is at y=0
-      const base = addBlock(BLOCK_HEIGHT, BLOCK_SIZE, BLOCK_SIZE, getColor(0), 0, 0, BLOCK_HEIGHT * 2);
-      base.userData = { sizeX: BLOCK_SIZE, sizeZ: BLOCK_SIZE, height: BLOCK_HEIGHT * 2 };
+      // Add base block (double height), always X direction
+      const base = addBlock(BLOCK_HEIGHT, BLOCK_SIZE, BLOCK_SIZE, getColor(0), 0, 0, BLOCK_HEIGHT * 2, 1);
+      base.userData = { sizeX: BLOCK_SIZE, sizeZ: BLOCK_SIZE, height: BLOCK_HEIGHT * 2, direction: 1 };
       stack.push(base);
 
       // Add first playable block
@@ -138,8 +191,8 @@ const StackGame3D = () => {
       let z = baseZ;
       if (direction === 1) x = baseX - moveRangeX;
       if (direction === -1) z = baseZ - moveRangeZ;
-      const block = addBlock(y, sizeX, sizeZ, color, x, z);
-      block.userData = { direction, moveDir: 1, speed: moveSpeed, sizeX, sizeZ, moveRangeX, moveRangeZ, baseX, baseZ, height: BLOCK_HEIGHT };
+      const block = addBlock(y, sizeX, sizeZ, color, x, z, BLOCK_HEIGHT, direction);
+      block.userData = { direction, moveDir: 1, speed: moveSpeed, sizeX, sizeZ, moveRangeX, moveRangeZ, baseX, baseZ, height: BLOCK_HEIGHT, direction };
       currentBlock = block;
       stack.push(block);
       isMoving = true;
@@ -178,22 +231,40 @@ const StackGame3D = () => {
         // Trim block
         const newSize = overlap;
         const cutSize = currSize - overlap;
-        curr.scale[axis] = newSize / currSize;
-        curr.position[axis] -= delta / 2;
-        curr.userData[sizeKey] = newSize;
+        // Remove the old mesh
+        scene.remove(curr);
+        // Create a new trimmed block with correct size and 3D shading
+        const trimmedBlock = addBlock(
+          curr.position.y,
+          axis === 'x' ? newSize : curr.userData.sizeX,
+          axis === 'z' ? newSize : curr.userData.sizeZ,
+          getColor(stack.length - 1),
+          axis === 'x' ? curr.position.x - delta / 2 : curr.position.x,
+          axis === 'z' ? curr.position.z - delta / 2 : curr.position.z,
+          BLOCK_HEIGHT,
+          curr.userData.direction
+        );
+        trimmedBlock.userData = { ...curr.userData };
+        trimmedBlock.userData[sizeKey] = newSize;
+        trimmedBlock.userData.height = BLOCK_HEIGHT;
+        trimmedBlock.userData.direction = curr.userData.direction;
+        stack[stack.length - 1] = trimmedBlock;
+        currentBlock = trimmedBlock;
         setScore(s => s + 1);
         moveSpeed = Math.min(moveSpeed + SPEED_INCREMENT, MAX_MOVE_SPEED);
 
         // Create falling piece
         if (cutSize > 0.01) {
-          const cutPos = curr.position[axis] + (delta > 0 ? (newSize / 2 + cutSize / 2) : -(newSize / 2 + cutSize / 2));
+          const cutPos = trimmedBlock.position[axis] + (delta > 0 ? (newSize / 2 + cutSize / 2) : -(newSize / 2 + cutSize / 2));
           const falling = addBlock(
-            curr.position.y,
-            axis === 'x' ? cutSize : curr.userData.sizeX,
-            axis === 'z' ? cutSize : curr.userData.sizeZ,
+            trimmedBlock.position.y,
+            axis === 'x' ? cutSize : trimmedBlock.userData.sizeX,
+            axis === 'z' ? cutSize : trimmedBlock.userData.sizeZ,
             getColor(stack.length - 1),
-            axis === 'x' ? cutPos : curr.position.x,
-            axis === 'z' ? cutPos : curr.position.z
+            axis === 'x' ? cutPos : trimmedBlock.position.x,
+            axis === 'z' ? cutPos : trimmedBlock.position.z,
+            BLOCK_HEIGHT,
+            curr.userData.direction
           );
           falling.userData = {
             velocityY: 0,
@@ -202,7 +273,8 @@ const StackGame3D = () => {
             rotation: (Math.random() - 0.5) * 0.1,
             angularVelocity: (Math.random() - 0.5) * 0.08,
             axis,
-            alive: true
+            alive: true,
+            direction: curr.userData.direction
           };
           fallingPieces.push(falling);
         }
@@ -212,7 +284,7 @@ const StackGame3D = () => {
           addNewBlock();
         }, 200);
         // Camera up
-        cameraTargetY = curr.position.y + 9;
+        cameraTargetY = trimmedBlock.position.y + 9;
       } else {
         // Game over
         // Make the last block fall as a falling piece
@@ -225,7 +297,9 @@ const StackGame3D = () => {
           last.userData.sizeZ,
           getColor(stack.length - 1),
           last.position.x,
-          last.position.z
+          last.position.z,
+          BLOCK_HEIGHT,
+          last.userData.direction
         );
         falling.userData = {
           velocityY: 0,
@@ -234,7 +308,8 @@ const StackGame3D = () => {
           rotation: (Math.random() - 0.5) * 0.1,
           angularVelocity: (Math.random() - 0.5) * 0.08,
           axis,
-          alive: true
+          alive: true,
+          direction: last.userData.direction
         };
         fallingPieces.push(falling);
         scene.remove(last); // Remove the last block from the stack
@@ -379,16 +454,16 @@ const StackGame3D = () => {
       <div ref={mountRef} className="w-full h-full" />
       {/* Score always at the top, over game only */}
       <div className="absolute top-8 left-0 w-full flex flex-col items-center pointer-events-none select-none z-20">
-        <div className="text-5xl font-light text-gray-800 drop-shadow-lg">{score}</div>
+        <div className="text-5xl font-thin text-gray-800 mt-8">{score}</div>
       </div>
       {/* Game Over Overlay, over game only */}
       {gameOver && (
         <div
-          className="absolute inset-0 flex flex-col justify-end items-center bg-black/20 z-30 cursor-pointer select-none"
+          className="absolute inset-0 flex flex-col justify-end items-center z-30 cursor-pointer select-none"
           onClick={() => setRestartKey(k => k + 1)}
         >
           <div className="w-full flex flex-col items-center mb-16">
-            <span className="text-3xl md:text-4xl font-light text-white drop-shadow-lg tracking-wide mb-4">TAP TO RESTART</span>
+            <span className="text-3xl md:text-4xl font-thin text-black tracking-wide mb-4">TAP TO RESTART</span>
           </div>
         </div>
       )}
